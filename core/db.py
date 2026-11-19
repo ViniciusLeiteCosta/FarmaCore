@@ -10,10 +10,15 @@ from psycopg_pool import ConnectionPool
 def _pool() -> ConnectionPool:
     return ConnectionPool(
         st.secrets["database"]["url"],
-        min_size=1,
+        min_size=0,
         max_size=5,
-        # prepare_threshold=None: compatível com o pooler do Supabase
-        kwargs={"row_factory": dict_row, "prepare_threshold": None},
+        timeout=30.0,
+        max_idle=300,  # recicla conexões ociosas antes do Supabase derrubar
+        kwargs={
+            "row_factory": dict_row,
+            "prepare_threshold": None,
+            "connect_timeout": 15,
+        },
         open=True,
     )
 
