@@ -1,7 +1,10 @@
 from datetime import date, timedelta
 import json
 import streamlit as st
+from core.style import aplicar_estilo
 from core import auth, db
+
+aplicar_estilo()
 
 usuario = auth.exigir_login()
 

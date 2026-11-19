@@ -1,5 +1,8 @@
 import streamlit as st
 from core import auth, db
+from core.style import aplicar_estilo
+
+aplicar_estilo()
 
 usuario = auth.exigir_login()
 

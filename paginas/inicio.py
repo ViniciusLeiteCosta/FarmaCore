@@ -1,6 +1,8 @@
 import streamlit as st
-
+from core.style import aplicar_estilo
 from core import db
+
+aplicar_estilo()
 
 st.title("🏠 Início")
 
