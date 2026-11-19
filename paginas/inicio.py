@@ -4,7 +4,7 @@ from core import db
 
 st.title("🏠 Início")
 
-try:
+try: 
     r = db.consultar_um(
         """
         SELECT

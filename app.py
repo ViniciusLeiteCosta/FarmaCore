@@ -26,6 +26,7 @@ paginas = {
 with st.sidebar:
     st.markdown(f"**{usuario['nome']}**")
     st.caption(f"{usuario['email']} · {usuario['perfil']}")
-    st.button("Sair", on_click=st.logout, use_container_width=True)
-
+    #st.button("Sair", on_click=st.logout, use_container_width=True)
+    if st.user.is_logged_in:
+        st.button("Sair", on_click=st.logout, use_container_width=True)
 st.navigation(paginas).run()
