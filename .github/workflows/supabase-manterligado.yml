@@ -1,0 +1,28 @@
+name: Manter Supabase Ativo
+
+on:
+  # Executa automaticamente a cada 3 dias às 08:00 UTC (05:00 BRT)
+  schedule:
+    - cron: "0 8 */3 * *"
+  # Permite disparar manualmente pela aba Actions do GitHub para testar/demonstrar
+  workflow_dispatch:
+
+jobs:
+  ping-database:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar driver PostgreSQL
+        run: pip install "psycopg[binary]"
+
+      - name: Executar rotina de manutenção no Supabase
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/keepalive.py
