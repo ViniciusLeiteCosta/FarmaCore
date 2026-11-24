@@ -37,14 +37,15 @@ def _registrar_login(usuario: dict) -> None:
 def exigir_login() -> dict:
     """Bloqueia o app até o usuário entrar. Devolve o usuário do banco."""
     dev_email = st.secrets.get("app", {}).get("dev_email")
-   
-    if dev_email and not st.user.is_logged_in:
+    logado_google = getattr(st.user, "is_logged_in", False)
+
+    if dev_email and not logado_google:
         usuario = _sincronizar_usuario(dev_email, "Desenvolvedor")
         _registrar_login(usuario)
         st.session_state["usuario"] = usuario
         return usuario
-    
-    if not st.user.is_logged_in:
+
+    if not logado_google:
         st.title("💊 FarmaCore")
         st.caption("ERP simplificado para farmácia")
         st.button("Entrar com Google", on_click=st.login, type="primary")
