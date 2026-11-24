@@ -1,26 +1,56 @@
 # FarmaCore 💊
 
-ERP simplificado para farmácia (Sistemas de Informação e Tecnologias, 2026.2, 1ª VA).
-Python + Streamlit, PostgreSQL (Supabase), login Google, deploy no Streamlit Community Cloud.
+Sistema ERP simplificado para gestão de farmácias, desenvolvido como projeto da disciplina **Sistemas de Informação e Tecnologias (2026.2 — 1ª VA)**.
 
-## Estrutura
+Construído em **Python** com **Streamlit**, banco de dados relacional **PostgreSQL (Supabase)**, autenticação via **Google OAuth** e deploy contínuo no **Streamlit Community Cloud**.
 
+---
+
+## Funcionalidades e Módulos
+
+- **🏠 Início (Dashboard Executivo):** Visão geral em tempo real com faturamento mensal, ticket médio, contagem de itens abaixo do estoque mínimo, contas a pagar pendentes, gráfico de evolução diária de vendas e alertas de reposição.
+- **📁 Cadastros:** Manutenção de produtos/medicamentos (código de barras, custo, preço de venda, estoque mínimo), categorias, fornecedores e clientes.
+- **🛒 Compras:** Registro de entrada de mercadorias por fornecedor, atualização automática do saldo em estoque e geração de título a pagar no financeiro.
+- **📦 Estoque:** Consulta de saldos atuais, alertas de nível crítico e histórico completo de movimentações (entradas, saídas, perdas e estornos).
+- **💰 Vendas (PDV):** Frente de caixa com cálculo de subtotal/desconto, múltiplas formas de pagamento (`DINHEIRO`, `CARTAO`, `PIX`), baixa automática de estoque e lançamento de receita.
+- **⚠️ Operacional (Perdas):** Registro de baixas por vencimento ou avaria com impacto direto no estoque e lançamento de despesa.
+- **📊 Financeiro:** Controle centralizado de contas a pagar, contas a receber e despesas operacionais, com baixa de pagamentos e auditoria.
+
+---
+
+## Estrutura do Projeto
+
+```text
+FarmaCore/
+├── app.py                            # Ponto de entrada, autenticação, identidade visual e navegação
+├── logo.png                          # Logotipo oficial exibido no topo da barra lateral
+├── requirements.txt                  # Dependências Python do projeto
+├── core/
+│   ├── auth.py                       # Autenticação Google e controle de perfis (ADMIN, FARMACEUTICO, CAIXA)
+│   ├── db.py                         # Pool de conexão e helpers de consulta SQL (psycopg)
+│   └── style.py                      # Estilização global (CSS) e componentes visuais
+├── paginas/
+│   ├── inicio.py                     # Dashboard executivo
+│   ├── cadastros.py                  # Gestão de produtos, categorias, fornecedores e clientes
+│   ├── compras.py                    # Entrada de compras
+│   ├── estoque.py                    # Controle e histórico de estoque
+│   ├── vendas.py                     # Ponto de venda (PDV)
+│   ├── operacional.py                # Registro de perdas
+│   └── financeiro.py                 # Fluxo financeiro
+├── db/
+│   └── schema.sql                    # DDL completo do banco (tabelas, constraints e índices)
+├── scripts/
+│   └── seed.py                       # Script para popular o banco com dados iniciais de demonstração
+├── docs/
+│   └── mer.md                        # Modelo Entidade-Relacionamento (MER)
+└── .streamlit/
+    └── secrets.toml.example          # Modelo de configuração das credenciais (Supabase e Google Auth)
 ```
-app.py              ponto de entrada (login + navegação)
-core/db.py          conexão e helpers de banco
-core/auth.py        login Google e perfis (ADMIN, FARMACEUTICO, CAIXA)
-paginas/            uma página por módulo
-db/schema.sql       script do banco (rodar no SQL Editor do Supabase)
-docs/mer.md         diagrama entidade-relacionamento
-.streamlit/secrets.toml.example   modelo das credenciais
-```
-
-## Rodar localmente
+## Como Rodar Localmente
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate          # Windows  (Linux/Mac: source .venv/bin/activate)
+.venv\Scripts\activate                # Windows (Linux/Mac: source .venv/bin/activate)
 pip install -r requirements.txt
-copy .streamlit\secrets.toml.example .streamlit\secrets.toml   # e preencha
-streamlit run app.py
-```
+copy .streamlit\secrets.toml.example .streamlit\secrets.toml   # preencha com Supabase e Google OAuth
+Popular o sistema com fornecedores, medicamentos, clientes e histórico: python scripts/seed.py
