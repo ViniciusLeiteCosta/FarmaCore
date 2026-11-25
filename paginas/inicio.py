@@ -1,28 +1,136 @@
+import pandas as pd
 import streamlit as st
-from core.style import aplicar_estilo
 from core import db
+from core.style import aplicar_estilo
 
 aplicar_estilo()
 
-st.title("🏠 Início")
+st.title("🏠 Início", anchor=False)
+st.caption("Dashboard Executivo · FarmaCore ERP")
 
-try: 
-    r = db.consultar_um(
+try:
+    res_faturamento = db.executar(
         """
         SELECT
-          (SELECT count(*) FROM produto    WHERE ativo) AS produtos,
-          (SELECT count(*) FROM fornecedor WHERE ativo) AS fornecedores,
-          (SELECT count(*) FROM cliente    WHERE ativo) AS clientes,
-          (SELECT count(*) FROM venda      WHERE status = 'CONFIRMADA') AS vendas,
-          (SELECT count(*) FROM produto    WHERE ativo AND saldo_estoque <= estoque_minimo) AS abaixo_minimo
+            COALESCE(SUM(valor_total), 0) AS total_mes,
+            COALESCE(AVG(valor_total), 0) AS ticket_medio,
+            COUNT(*) AS qtd_vendas
+        FROM venda
+        WHERE status = 'CONFIRMADA'
+          AND DATE_TRUNC('month', data_venda) = DATE_TRUNC('month', CURRENT_DATE)
         """
+    )[0]
+    faturamento_mes = float(res_faturamento["total_mes"])
+    ticket_medio = float(res_faturamento["ticket_medio"])
+    qtd_vendas = int(res_faturamento["qtd_vendas"])
+except Exception:
+    faturamento_mes, ticket_medio, qtd_vendas = 0.0, 0.0, 0
+
+try:
+    abaixo_minimo = int(
+        db.executar(
+            "SELECT COUNT(*) AS total FROM produto WHERE ativo = TRUE AND saldo_estoque < estoque_minimo"
+        )[0]["total"]
     )
-    c = st.columns(5)
-    c[0].metric("Produtos", r["produtos"])
-    c[1].metric("Fornecedores", r["fornecedores"])
-    c[2].metric("Clientes", r["clientes"])
-    c[3].metric("Vendas", r["vendas"])
-    c[4].metric("Abaixo do mínimo", r["abaixo_minimo"])
-    st.success("Conexão com o banco OK.")
-except Exception as e:  # noqa: BLE001
-    st.error(f"Não foi possível consultar o banco: {e}")
+except Exception:
+    abaixo_minimo = 0
+
+try:
+    res_contas = db.executar(
+        """
+        SELECT COALESCE(SUM(valor), 0) AS valor_pendente, COUNT(*) AS qtd_pendente
+        FROM lancamento_financeiro
+        WHERE tipo = 'PAGAR' AND status = 'PENDENTE'
+        """
+    )[0]
+    contas_pendentes = float(res_contas["valor_pendente"])
+    qtd_contas = int(res_contas["qtd_pendente"])
+except Exception:
+    contas_pendentes, qtd_contas = 0.0, 0
+
+
+def _brl(valor: float) -> str:
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.metric("Faturamento (Mês)", _brl(faturamento_mes), f"{qtd_vendas} venda(s) no mês")
+with col2:
+    st.metric("Ticket Médio", _brl(ticket_medio), "Média por atendimento")
+with col3:
+    st.metric(
+        "Abaixo do Mínimo",
+        f"{abaixo_minimo}",
+        "Necessita reposição" if abaixo_minimo > 0 else "Estoque saudável",
+        delta_color="inverse" if abaixo_minimo > 0 else "normal",
+    )
+with col4:
+    st.metric(
+        "Contas a Pagar",
+        _brl(contas_pendentes),
+        f"{qtd_contas} título(s) pendente(s)",
+        delta_color="inverse" if qtd_contas > 0 else "normal",
+    )
+
+st.markdown("---")
+
+col_grafico, col_alertas = st.columns([1.4, 1])
+
+with col_grafico:
+    st.subheader("📈 Evolução de Vendas")
+    try:
+        historico_vendas = db.executar(
+            """
+            SELECT TO_CHAR(data_venda::date, 'DD/MM') AS dia, SUM(valor_total)::float AS faturamento
+            FROM venda
+            WHERE status = 'CONFIRMADA'
+            GROUP BY data_venda::date
+            ORDER BY data_venda::date
+            LIMIT 15
+            """
+        )
+    except Exception:
+        historico_vendas = []
+
+    if historico_vendas:
+        df_vendas = pd.DataFrame(historico_vendas).set_index("dia")
+        st.area_chart(df_vendas, color=["#0073e6"])
+    else:
+        st.info("Realize vendas no PDV para visualizar a evolução diária aqui.")
+
+with col_alertas:
+    st.subheader("🚨 Alertas de Reposição")
+    try:
+        itens_alerta = db.executar(
+            """
+            SELECT nome, saldo_estoque, estoque_minimo
+            FROM produto
+            WHERE ativo = TRUE AND saldo_estoque < estoque_minimo
+            ORDER BY (estoque_minimo - saldo_estoque) DESC
+            LIMIT 6
+            """
+        )
+    except Exception:
+        itens_alerta = []
+
+    if itens_alerta:
+        df_alertas = pd.DataFrame(itens_alerta)
+        max_ref = max(int(df_alertas["estoque_minimo"].max()), 1)
+        st.dataframe(
+            df_alertas,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "nome": st.column_config.TextColumn("Produto"),
+                "saldo_estoque": st.column_config.ProgressColumn(
+                    "Saldo Atual",
+                    format="%d un",
+                    min_value=0,
+                    max_value=max_ref,
+                ),
+                "estoque_minimo": st.column_config.NumberColumn("Mínimo", format="%d un"),
+            },
+        )
+    else:
+        st.success("Nenhum produto abaixo do estoque mínimo.")

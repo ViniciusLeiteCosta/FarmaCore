@@ -7,7 +7,7 @@ aplicar_estilo()
 
 usuario = auth.exigir_login()
 
-st.title("🗂️ Cadastros")
+st.title("🗂️ Cadastros", anchor=False)
 
 aba_prod, aba_cat, aba_forn, aba_cli = st.tabs(
     ["💊 Produtos", "🏷️ Categorias", "🚚 Fornecedores", "👤 Clientes"]

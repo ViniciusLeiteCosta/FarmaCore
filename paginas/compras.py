@@ -8,7 +8,7 @@ aplicar_estilo()
 
 usuario = auth.exigir_login()
 
-st.title("🛒 Compras & Entrada de Mercadorias")
+st.title("🛒 Compras & Entrada de Mercadorias", anchor=False)
 
 if "carrinho_compra" not in st.session_state:
     st.session_state.carrinho_compra = []

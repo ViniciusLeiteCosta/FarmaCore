@@ -8,7 +8,7 @@ aplicar_estilo()
 
 usuario = auth.exigir_login()
 
-st.title("⚠️ Controle de Perdas")
+st.title("⚠️ Controle de Perdas", anchor=False)
 
 produtos = db.consultar(
     "SELECT id, nome, saldo_estoque, preco_custo FROM produto WHERE ativo = TRUE AND saldo_estoque > 0 ORDER BY nome"

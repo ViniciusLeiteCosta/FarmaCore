@@ -6,7 +6,7 @@ aplicar_estilo()
 
 usuario = auth.exigir_login()
 
-st.title("📦 Controle de Estoque")
+st.title("📦 Controle de Estoque", anchor=False)
 
 aba_saldo, aba_mov = st.tabs(["📊 Posição Atual", "🔄 Histórico de Movimentações"])
 

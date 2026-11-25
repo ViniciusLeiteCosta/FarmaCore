@@ -7,7 +7,7 @@ aplicar_estilo()
 
 usuario = auth.exigir_login()
 
-st.title("📊 Gestão Financeira")
+st.title("📊 Gestão Financeira", anchor=False)
 
 resumo = db.consultar_um(
     """

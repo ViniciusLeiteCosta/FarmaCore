@@ -8,7 +8,7 @@ aplicar_estilo()
 
 usuario = auth.exigir_login()
 
-st.title("💰 Vendas & Frente de Caixa (PDV)")
+st.title("💰 Vendas & Frente de Caixa (PDV)", anchor=False)
 
 if "carrinho_venda" not in st.session_state:
     st.session_state.carrinho_venda = []
