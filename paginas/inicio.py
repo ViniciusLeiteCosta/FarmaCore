@@ -1,12 +1,14 @@
 import pandas as pd
 import streamlit as st
-from core import db
+from core import auth, db
 from core.style import aplicar_estilo
+from core.ui import estado_vazio
 
 aplicar_estilo()
+usuario = auth.exigir_login()
 
 st.title("🏠 Início", anchor=False)
-st.caption("Dashboard Executivo · FarmaCore ERP")
+st.caption("Visão executiva de faturamento, saúde de estoque e compromissos financeiros")
 
 try:
     res_faturamento = db.executar(
@@ -29,7 +31,7 @@ except Exception:
 try:
     abaixo_minimo = int(
         db.executar(
-            "SELECT COUNT(*) AS total FROM produto WHERE ativo = TRUE AND saldo_estoque < estoque_minimo"
+            "SELECT COUNT(*) AS total FROM produto WHERE ativo = TRUE AND saldo_estoque <= estoque_minimo"
         )[0]["total"]
     )
 except Exception:
@@ -73,12 +75,12 @@ with col4:
         delta_color="inverse" if qtd_contas > 0 else "normal",
     )
 
-st.markdown("---")
+st.divider()
 
-col_grafico, col_alertas = st.columns([1.4, 1])
+col_grafico, col_alertas = st.columns([1.4, 1], gap="large")
 
 with col_grafico:
-    st.subheader("📈 Evolução de Vendas")
+    st.subheader("📈 Evolução de Vendas", anchor=False)
     try:
         historico_vendas = db.executar(
             """
@@ -97,17 +99,21 @@ with col_grafico:
         df_vendas = pd.DataFrame(historico_vendas).set_index("dia")
         st.area_chart(df_vendas, color=["#0073e6"])
     else:
-        st.info("Realize vendas no PDV para visualizar a evolução diária aqui.")
+        estado_vazio(
+            "Sem histórico de vendas ainda",
+            "Registre vendas no PDV para acompanhar o gráfico de evolução diária.",
+            icone="📈",
+        )
 
 with col_alertas:
-    st.subheader("🚨 Alertas de Reposição")
+    st.subheader("🚨 Alertas de Reposição", anchor=False)
     try:
         itens_alerta = db.executar(
             """
             SELECT nome, saldo_estoque, estoque_minimo
             FROM produto
-            WHERE ativo = TRUE AND saldo_estoque < estoque_minimo
-            ORDER BY (estoque_minimo - saldo_estoque) DESC
+            WHERE ativo = TRUE AND saldo_estoque <= estoque_minimo
+            ORDER BY (estoque_minimo - saldo_estoque) DESC, nome
             LIMIT 6
             """
         )
@@ -133,4 +139,8 @@ with col_alertas:
             },
         )
     else:
-        st.success("Nenhum produto abaixo do estoque mínimo.")
+        estado_vazio(
+            "Níveis de estoque regulares",
+            "Nenhum medicamento está abaixo ou no limite do estoque mínimo.",
+            icone="✅",
+        )

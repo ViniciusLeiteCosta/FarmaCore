@@ -1,14 +1,19 @@
 from datetime import date, timedelta
 import json
+import pandas as pd
 import streamlit as st
-from core.style import aplicar_estilo
 from core import auth, db
+from core.style import aplicar_estilo
+from core.ui import estado_vazio, modal_confirmacao, notificar
 
 aplicar_estilo()
-
 usuario = auth.exigir_login()
 
+if "toast_compras" in st.session_state:
+    notificar(st.session_state.pop("toast_compras"), tipo="sucesso")
+
 st.title("🛒 Compras & Entrada de Mercadorias", anchor=False)
+st.caption("Recebimento de pedidos de fornecedores, atualização de custo, entrada de estoque e geração de título a pagar")
 
 if "carrinho_compra" not in st.session_state:
     st.session_state.carrinho_compra = []
@@ -20,7 +25,11 @@ with aba_nova:
     produtos = db.consultar("SELECT id, nome, preco_custo, saldo_estoque FROM produto WHERE ativo = TRUE ORDER BY nome")
 
     if not fornecedores or not produtos:
-        st.info("Cadastre ao menos um fornecedor e um produto antes de registrar compras.")
+        estado_vazio(
+            "Pré-requisitos pendentes",
+            "Cadastre ao menos um fornecedor e um produto na aba Cadastros antes de registrar compras.",
+            icone="🚚",
+        )
     else:
         forn_map = {f["razao_social"]: f["id"] for f in fornecedores}
         prod_map = {f"{p['nome']} (Saldo: {p['saldo_estoque']})": p for p in produtos}
@@ -31,7 +40,7 @@ with aba_nova:
         vencimento = c3.date_input("Vencimento boleto", value=date.today() + timedelta(days=30))
 
         st.divider()
-        st.subheader("Itens da Compra")
+        st.subheader("Itens da Compra", anchor=False)
 
         ic1, ic2, ic3, ic4 = st.columns([3, 1, 1, 1])
         prod_label = ic1.selectbox("Produto", list(prod_map.keys()))
@@ -57,9 +66,26 @@ with aba_nova:
             st.rerun()
 
         if st.session_state.carrinho_compra:
-            st.dataframe(st.session_state.carrinho_compra, use_container_width=True, hide_index=True)
+            df_itens = pd.DataFrame(st.session_state.carrinho_compra)[
+                ["nome", "quantidade", "custo_unitario", "subtotal"]
+            ]
+            st.dataframe(
+                df_itens,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "nome": st.column_config.TextColumn("Produto"),
+                    "quantidade": st.column_config.NumberColumn("Qtd", format="%d un"),
+                    "custo_unitario": st.column_config.NumberColumn("Custo Unit.", format="R$ %.2f"),
+                    "subtotal": st.column_config.NumberColumn("Subtotal", format="R$ %.2f"),
+                },
+            )
             total_compra = sum(i["subtotal"] for i in st.session_state.carrinho_compra)
-            st.metric("Total da Compra", f"R$ {total_compra:,.2f}")
+            st.metric(
+                "Total da Compra",
+                f"R$ {total_compra:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                f"{len(st.session_state.carrinho_compra)} item(ns) na nota",
+            )
 
             b1, b2 = st.columns([1, 3])
             if b1.button("Limpar Itens", use_container_width=True):
@@ -124,10 +150,16 @@ with aba_nova:
                         )
 
                     st.session_state.carrinho_compra = []
-                    st.success(f"Compra #{compra_id} confirmada e estoque atualizado!")
+                    st.session_state["toast_compras"] = f"Compra #{compra_id} confirmada e estoque atualizado!"
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao confirmar compra: {e}")
+        else:
+            estado_vazio(
+                "Nenhum item adicionado à compra",
+                "Selecione um produto acima, informe a quantidade e o custo unitário.",
+                icone="📦",
+            )
 
 with aba_hist:
     compras = db.consultar(
@@ -141,22 +173,37 @@ with aba_hist:
          LIMIT 50
         """
     )
-    st.dataframe(compras, use_container_width=True, hide_index=True)
 
-    confirmadas = [c for c in compras if c["status"] == "CONFIRMADA"]
-    if confirmadas:
-        with st.expander("Estornar Compra Confirmada"):
-            comp_est_id = st.selectbox(
-                "Selecione a compra para estornar",
-                [c["id"] for c in confirmadas],
-                format_func=lambda cid: f"Compra #{cid}",
-            )
-            if st.button("Confirmar Estorno da Compra", type="secondary"):
+    if not compras:
+        estado_vazio("Nenhuma compra registrada", "As entradas de mercadoria aparecerão aqui.", icone="🧾")
+    else:
+        df_compras = pd.DataFrame(compras)
+        df_compras["status_fmt"] = df_compras["status"].map(
+            {"CONFIRMADA": "🟢 CONFIRMADA", "CANCELADA": "🔴 CANCELADA"}
+        ).fillna(df_compras["status"])
+
+        st.dataframe(
+            df_compras[["id", "fornecedor", "data_compra", "valor_total", "status_fmt", "usuario"]],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "id": st.column_config.NumberColumn("Compra #", format="%d"),
+                "fornecedor": st.column_config.TextColumn("Fornecedor"),
+                "data_compra": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+                "valor_total": st.column_config.NumberColumn("Valor Total", format="R$ %.2f"),
+                "status_fmt": st.column_config.TextColumn("Situação"),
+                "usuario": st.column_config.TextColumn("Responsável"),
+            },
+        )
+
+        confirmadas = [c for c in compras if c["status"] == "CONFIRMADA"]
+        if confirmadas:
+            def _executar_estorno_compra(cid: int) -> None:
                 try:
                     with db.transacao() as conn:
                         itens = conn.execute(
                             "SELECT produto_id, quantidade FROM item_compra WHERE compra_id = %s",
-                            (comp_est_id,),
+                            (cid,),
                         ).fetchall()
                         for it in itens:
                             conn.execute(
@@ -164,24 +211,42 @@ with aba_hist:
                                 INSERT INTO movimentacao_estoque (produto_id, tipo, origem, origem_id, quantidade, usuario_id)
                                 VALUES (%s, 'SAIDA', 'ESTORNO_COMPRA', %s, %s, %s)
                                 """,
-                                (it["produto_id"], comp_est_id, it["quantidade"], usuario["id"]),
+                                (it["produto_id"], cid, it["quantidade"], usuario["id"]),
                             )
                         conn.execute(
                             "UPDATE compra SET status = 'CANCELADA', cancelado_em = now() WHERE id = %s",
-                            (comp_est_id,),
+                            (cid,),
                         )
                         conn.execute(
                             "UPDATE lancamento_financeiro SET status = 'CANCELADO' WHERE compra_id = %s",
-                            (comp_est_id,),
+                            (cid,),
                         )
                         conn.execute(
                             """
                             INSERT INTO log_auditoria (usuario_id, acao, tabela, registro_id)
                             VALUES (%s, 'CANCELAR', 'compra', %s)
                             """,
-                            (usuario["id"], comp_est_id),
+                            (usuario["id"], cid),
                         )
-                    st.success(f"Compra #{comp_est_id} estornada com sucesso!")
-                    st.rerun()
+                    st.session_state["toast_compras"] = f"Compra #{cid} estornada com sucesso!"
                 except Exception as e:
                     st.error(f"Não foi possível estornar (verifique se já houve saída do estoque): {e}")
+
+            with st.expander("Estornar Compra Confirmada"):
+                comp_est_id = st.selectbox(
+                    "Selecione a compra para estornar",
+                    [c["id"] for c in confirmadas],
+                    format_func=lambda cid: next(
+                        f"Compra #{x['id']} — {x['fornecedor']} (R$ {float(x['valor_total']):.2f})"
+                        for x in confirmadas
+                        if x["id"] == cid
+                    ),
+                )
+                if st.button("Estornar Compra Selecionada", type="secondary"):
+                    modal_confirmacao(
+                        titulo_acao=f"Confirmar estorno da Compra #{comp_est_id}?",
+                        descricao="Os itens serão baixados do estoque e o título a pagar vinculado será cancelado.",
+                        on_confirmar=_executar_estorno_compra,
+                        cid=comp_est_id,
+                        texto_confirmar="Sim, estornar compra",
+                    )

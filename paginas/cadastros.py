@@ -1,13 +1,18 @@
 import json
+import pandas as pd
 import streamlit as st
-from core.style import aplicar_estilo
 from core import auth, db
+from core.style import aplicar_estilo
+from core.ui import estado_vazio, notificar
 
 aplicar_estilo()
-
 usuario = auth.exigir_login()
 
+if "toast_cadastros" in st.session_state:
+    notificar(st.session_state.pop("toast_cadastros"), tipo="sucesso")
+
 st.title("🗂️ Cadastros", anchor=False)
+st.caption("Gestão de catálogo de produtos, categorias, fornecedores e base de clientes")
 
 aba_prod, aba_cat, aba_forn, aba_cli = st.tabs(
     ["💊 Produtos", "🏷️ Categorias", "🚚 Fornecedores", "👤 Clientes"]
@@ -64,7 +69,7 @@ with aba_prod:
                                 """,
                                 (usuario["id"], novo["id"], json.dumps({"nome": nome.strip()})),
                             )
-                            st.success("Produto cadastrado com sucesso!")
+                            st.session_state["toast_cadastros"] = f"Produto '{nome.strip()}' cadastrado com sucesso!"
                             st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao cadastrar produto: {e}")
@@ -72,7 +77,7 @@ with aba_prod:
     busca_prod = st.text_input("Buscar produto por nome ou código de barras", key="busca_prod")
     produtos = db.consultar(
         """
-        SELECT p.id, p.nome, c.nome AS categoria, p.codigo_barras,
+        SELECT p.id, p.nome, c.nome AS categoria, COALESCE(p.codigo_barras, '-') AS codigo_barras,
                p.preco_custo, p.preco_venda, p.estoque_minimo, p.saldo_estoque, p.ativo
           FROM produto p
           JOIN categoria c ON c.id = p.categoria_id
@@ -81,7 +86,32 @@ with aba_prod:
         """,
         (busca_prod, f"%{busca_prod}%", f"%{busca_prod}%"),
     )
-    st.dataframe(produtos, use_container_width=True, hide_index=True)
+
+    if not produtos:
+        estado_vazio(
+            "Nenhum produto encontrado",
+            "Cadastre um novo item acima ou limpe o campo de busca.",
+            icone="💊",
+        )
+    else:
+        df_prod = pd.DataFrame(produtos)
+        df_prod["status_fmt"] = df_prod["ativo"].map({True: "🟢 Ativo", False: "🔴 Inativo"})
+        st.dataframe(
+            df_prod[["id", "nome", "categoria", "codigo_barras", "preco_custo", "preco_venda", "estoque_minimo", "saldo_estoque", "status_fmt"]],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "id": st.column_config.NumberColumn("ID #", format="%d"),
+                "nome": st.column_config.TextColumn("Produto"),
+                "categoria": st.column_config.TextColumn("Categoria"),
+                "codigo_barras": st.column_config.TextColumn("EAN"),
+                "preco_custo": st.column_config.NumberColumn("Custo", format="R$ %.2f"),
+                "preco_venda": st.column_config.NumberColumn("Venda", format="R$ %.2f"),
+                "estoque_minimo": st.column_config.NumberColumn("Mínimo", format="%d un"),
+                "saldo_estoque": st.column_config.NumberColumn("Saldo", format="%d un"),
+                "status_fmt": st.column_config.TextColumn("Status"),
+            },
+        )
 
 # ---------------------------------------------------------------------
 # ABA 2: CATEGORIAS
@@ -94,13 +124,28 @@ with aba_cat:
             if nome_cat.strip():
                 try:
                     db.executar("INSERT INTO categoria (nome) VALUES (%s)", (nome_cat.strip(),))
-                    st.success("Categoria adicionada!")
+                    st.session_state["toast_cadastros"] = f"Categoria '{nome_cat.strip()}' adicionada!"
                     st.rerun()
                 except Exception as e:
                     st.error(f"Erro ao salvar categoria: {e}")
 
     cats = db.consultar("SELECT id, nome, ativo, criado_em FROM categoria ORDER BY nome")
-    st.dataframe(cats, use_container_width=True, hide_index=True)
+    if not cats:
+        estado_vazio("Nenhuma categoria cadastrada", "Adicione a primeira categoria no formulário acima.", icone="🏷️")
+    else:
+        df_cats = pd.DataFrame(cats)
+        df_cats["status_fmt"] = df_cats["ativo"].map({True: "🟢 Ativa", False: "🔴 Inativa"})
+        st.dataframe(
+            df_cats[["id", "nome", "status_fmt", "criado_em"]],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "id": st.column_config.NumberColumn("ID #", format="%d"),
+                "nome": st.column_config.TextColumn("Categoria"),
+                "status_fmt": st.column_config.TextColumn("Status"),
+                "criado_em": st.column_config.DatetimeColumn("Criada em", format="DD/MM/YYYY HH:mm"),
+            },
+        )
 
 # ---------------------------------------------------------------------
 # ABA 3: FORNECEDORES
@@ -127,15 +172,32 @@ with aba_forn:
                             """,
                             (razao.strip(), cnpj.strip(), tel_f.strip() or None, email_f.strip() or None),
                         )
-                        st.success("Fornecedor cadastrado!")
+                        st.session_state["toast_cadastros"] = f"Fornecedor '{razao.strip()}' cadastrado!"
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao cadastrar fornecedor: {e}")
 
     fornecedores = db.consultar(
-        "SELECT id, razao_social, cnpj, telefone, email, ativo FROM fornecedor ORDER BY razao_social"
+        "SELECT id, razao_social, cnpj, COALESCE(telefone, '-') AS telefone, COALESCE(email, '-') AS email, ativo FROM fornecedor ORDER BY razao_social"
     )
-    st.dataframe(fornecedores, use_container_width=True, hide_index=True)
+    if not fornecedores:
+        estado_vazio("Nenhum fornecedor cadastrado", "Clique em '+ Novo Fornecedor' para registrar o primeiro parceiro.", icone="🚚")
+    else:
+        df_forn = pd.DataFrame(fornecedores)
+        df_forn["status_fmt"] = df_forn["ativo"].map({True: "🟢 Ativo", False: "🔴 Inativo"})
+        st.dataframe(
+            df_forn[["id", "razao_social", "cnpj", "telefone", "email", "status_fmt"]],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "id": st.column_config.NumberColumn("ID #", format="%d"),
+                "razao_social": st.column_config.TextColumn("Razão Social"),
+                "cnpj": st.column_config.TextColumn("CNPJ"),
+                "telefone": st.column_config.TextColumn("Telefone"),
+                "email": st.column_config.TextColumn("E-mail"),
+                "status_fmt": st.column_config.TextColumn("Status"),
+            },
+        )
 
 # ---------------------------------------------------------------------
 # ABA 4: CLIENTES
@@ -167,12 +229,29 @@ with aba_cli:
                                 email_cli.strip() or None,
                             ),
                         )
-                        st.success("Cliente cadastrado!")
+                        st.session_state["toast_cadastros"] = f"Cliente '{nome_cli.strip()}' cadastrado!"
                         st.rerun()
                     except Exception as e:
                         st.error(f"Erro ao cadastrar cliente: {e}")
 
     clientes = db.consultar(
-        "SELECT id, nome, cpf, telefone, email, ativo FROM cliente ORDER BY nome"
+        "SELECT id, nome, COALESCE(cpf, '-') AS cpf, COALESCE(telefone, '-') AS telefone, COALESCE(email, '-') AS email, ativo FROM cliente ORDER BY nome"
     )
-    st.dataframe(clientes, use_container_width=True, hide_index=True)
+    if not clientes:
+        estado_vazio("Nenhum cliente cadastrado", "Clique em '+ Novo Cliente' para iniciar sua base.", icone="👤")
+    else:
+        df_cli = pd.DataFrame(clientes)
+        df_cli["status_fmt"] = df_cli["ativo"].map({True: "🟢 Ativo", False: "🔴 Inativo"})
+        st.dataframe(
+            df_cli[["id", "nome", "cpf", "telefone", "email", "status_fmt"]],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "id": st.column_config.NumberColumn("ID #", format="%d"),
+                "nome": st.column_config.TextColumn("Nome"),
+                "cpf": st.column_config.TextColumn("CPF"),
+                "telefone": st.column_config.TextColumn("Telefone"),
+                "email": st.column_config.TextColumn("E-mail"),
+                "status_fmt": st.column_config.TextColumn("Status"),
+            },
+        )

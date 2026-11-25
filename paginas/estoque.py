@@ -1,12 +1,14 @@
+import pandas as pd
 import streamlit as st
 from core import auth, db
 from core.style import aplicar_estilo
+from core.ui import estado_vazio
 
 aplicar_estilo()
-
 usuario = auth.exigir_login()
 
 st.title("📦 Controle de Estoque", anchor=False)
+st.caption("Posição atual de inventário, valoração a custo, alertas de reposição e trilha de movimentações")
 
 aba_saldo, aba_mov = st.tabs(["📊 Posição Atual", "🔄 Histórico de Movimentações"])
 
@@ -46,11 +48,71 @@ with aba_saldo:
     criticos = sum(1 for r in saldos if r["saldo_estoque"] <= r["estoque_minimo"])
 
     m1, m2, m3 = st.columns(3)
-    m1.metric("Unidades em Estoque", total_itens)
-    m2.metric("Valor em Estoque (Custo)", f"R$ {valor_estoque:,.2f}")
-    m3.metric("Produtos em Alerta", criticos)
+    m1.metric("Unidades em Estoque", f"{total_itens:,}".replace(",", "."), f"{len(saldos)} SKU(s) listado(s)")
+    m2.metric(
+        "Valor em Estoque (Custo)",
+        f"R$ {valor_estoque:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+        "Capital imobilizado",
+    )
+    m3.metric(
+        "Produtos em Alerta",
+        criticos,
+        "Abaixo ou no mínimo" if criticos > 0 else "Níveis regulares",
+        delta_color="inverse" if criticos > 0 else "normal",
+    )
 
-    st.dataframe(saldos, use_container_width=True, hide_index=True)
+    st.divider()
+
+    if not saldos:
+        estado_vazio(
+            "Nenhum produto encontrado para o filtro aplicado",
+            "Tente limpar a busca ou desmarcar a opção de alerta crítico.",
+            icone="🔎",
+        )
+    else:
+        df_saldos = pd.DataFrame(saldos)
+        df_saldos["nivel_pct"] = df_saldos.apply(
+            lambda r: min(100, int((r["saldo_estoque"] / max(r["estoque_minimo"] * 2, 1)) * 100)),
+            axis=1,
+        )
+
+        st.dataframe(
+            df_saldos[
+                [
+                    "id",
+                    "produto",
+                    "categoria",
+                    "ean",
+                    "saldo_estoque",
+                    "estoque_minimo",
+                    "nivel_pct",
+                    "preco_custo",
+                    "preco_venda",
+                    "valor_custo_total",
+                    "situacao",
+                ]
+            ],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "id": st.column_config.NumberColumn("ID #", format="%d"),
+                "produto": st.column_config.TextColumn("Produto"),
+                "categoria": st.column_config.TextColumn("Categoria"),
+                "ean": st.column_config.TextColumn("EAN"),
+                "saldo_estoque": st.column_config.NumberColumn("Saldo", format="%d un"),
+                "estoque_minimo": st.column_config.NumberColumn("Mínimo", format="%d un"),
+                "nivel_pct": st.column_config.ProgressColumn(
+                    "Nível",
+                    min_value=0,
+                    max_value=100,
+                    format="%d%%",
+                ),
+                "preco_custo": st.column_config.NumberColumn("Custo Unit.", format="R$ %.2f"),
+                "preco_venda": st.column_config.NumberColumn("Venda Unit.", format="R$ %.2f"),
+                "valor_custo_total": st.column_config.NumberColumn("Total Custo", format="R$ %.2f"),
+                "situacao": st.column_config.TextColumn("Situação"),
+            },
+        )
 
 with aba_mov:
     f1, f2 = st.columns([2, 1])
@@ -75,4 +137,31 @@ with aba_mov:
         """,
         (filtro_prod, f"%{filtro_prod}%", filtro_origem, filtro_origem),
     )
-    st.dataframe(movs, use_container_width=True, hide_index=True)
+
+    if not movs:
+        estado_vazio(
+            "Nenhuma movimentação registrada",
+            "As entradas e saídas de compras, vendas e perdas aparecerão aqui.",
+            icone="🔄",
+        )
+    else:
+        df_movs = pd.DataFrame(movs)
+        df_movs["tipo_fmt"] = df_movs["tipo"].map(
+            {"ENTRADA": "⬆️ ENTRADA", "SAIDA": "⬇️ SAÍDA"}
+        ).fillna(df_movs["tipo"])
+
+        st.dataframe(
+            df_movs[["id", "data_hora", "produto", "tipo_fmt", "origem", "doc_id", "quantidade", "responsavel"]],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "id": st.column_config.NumberColumn("Mov #", format="%d"),
+                "data_hora": st.column_config.DatetimeColumn("Data/Hora", format="DD/MM/YYYY HH:mm"),
+                "produto": st.column_config.TextColumn("Produto"),
+                "tipo_fmt": st.column_config.TextColumn("Tipo"),
+                "origem": st.column_config.TextColumn("Origem"),
+                "doc_id": st.column_config.NumberColumn("Doc #", format="%d"),
+                "quantidade": st.column_config.NumberColumn("Qtd", format="%d un"),
+                "responsavel": st.column_config.TextColumn("Responsável"),
+            },
+        )
