@@ -25,4 +25,4 @@ jobs:
       - name: Executar rotina de manutenção no Supabase
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python scripts/keepalive.py
+        run: python scripts/manterligado.py
